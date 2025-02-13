@@ -1,0 +1,206 @@
+# Data Analysis
+
+
+## Reading the Cleaned bike data 
+```{r}
+file_path <- "/Users/jagadishramakurthi/Downloads/GDACP/bike_data_cleaned.csv"
+bike_data_cleaned <- read.csv(file_path, stringsAsFactors = TRUE)
+```
+
+
+```{r}
+head(bike_data_cleaned)
+```
+
+# Analyzing the data over distribution of riders
+```{r}
+library(ggplot2)
+
+member_counts <- table(bike_data_cleaned$member_casual)
+member_data <- as.data.frame(member_counts)
+colnames(member_data) <- c("Category", "Count")
+member_data$Percentage <- round(member_data$Count / sum(member_data$Count) * 100, 1)
+colors <- c("grey", "orange") 
+
+# Plot
+ggplot(member_data, aes(x = "", y = Count, fill = Category)) +
+  geom_bar(stat = "identity", width = 1, show.legend = TRUE) +
+  coord_polar(theta = "y") +
+  labs(title = "Distribution of Member vs Casual Riders in 2024") +
+  scale_fill_manual(values = colors) +
+  theme_void() + 
+  theme(legend.title = element_blank()) + 
+  geom_text(aes(label = paste(Percentage, "%")), 
+            position = position_stack(vjust = 0.5), 
+            color = "white", size = 5)  
+
+
+```
+##During the observed period, there is a notable difference in the number of rides taken by two distinct customer groups. Annual members dominate, accounting for 63.7% of the total rides, while casual riders contribute to the remaining 36.3% of the rides.
+
+
+
+## Observing the riders trend over ride month
+```{r}
+bike_data_cleaned$ride_month <- as.factor(bike_data_cleaned$ride_month)
+
+ggplot(bike_data_cleaned, aes(x = ride_month, fill = member_casual)) +
+  geom_bar(position = "dodge") +  
+  labs(
+    title = "Rides Taken by Member Type by Month",
+    x = "Month of Ride",
+    y = "Number of Rides",
+    fill = "Rider Type"
+  ) +
+  scale_fill_manual(values = c("grey", "orange")) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+##The plot shows the number of rides taken by members and casual riders each month, revealing a clear seasonal pattern. Ride numbers for both groups peak during the summer months, specifically from June to September, with the highest number of rides occurring around August/September. Conversely, the lowest ridership is observed during the winter months, particularly in January and February. In every month, members consistently take more rides than casual riders.
+
+
+## Rides based on the ride day
+```{r}
+ggplot(bike_data_cleaned, aes(x = ride_weekday, fill = member_casual)) + 
+  geom_bar(position = "dodge") + 
+  labs(title = "Rides by Day of the Week for Members vs Casual Riders",
+       x = "Day of the Week",
+       y = "Number of Rides",
+       fill = "Rider Type") +
+  scale_fill_manual(values = c("member" = "orange", "casual" = "grey")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+##Member ridership is significantly higher than casual ridership on all days. Wednesday sees the highest number of rides for members, while casual ridership is highest on Weekends(Friday & saturday)
+
+
+##Ride count by each user_type on Weekdays and weekends over the ride hour
+```{r}
+library(dplyr)
+library(ggplot2)
+
+
+bike_data_weekdays <- bike_data_cleaned %>%
+  filter(ride_weekday %in% c("Monday", "Tuesday", "Wednesday", "Thursday"))
+
+
+ggplot(bike_data_weekdays, aes(x = ride_hour, group = member_casual, color = member_casual)) +
+  geom_line(stat = "count", size = 1) +  
+  geom_point(stat = "count", size = 3) +  
+  scale_color_manual(values = c("casual" = "black", "member" = "orange")) +
+  labs(title = "Ride Count by Time of Day (Weekdays)",
+       x = "Hour of the Day",
+       y = "Ride Count",
+       color = "Rider Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_continuous(breaks = 0:23)
+
+
+```
+#Both groups exhibit a peak in ridership during the late afternoon/early evening (around 4-6 PM). In general, during peak times, member ridership exceeds casual ridership. The lowest ridership for both groups is in the very early morning hours.Both member and casual ridership increase throughout the day, peaking in the late afternoon/early evening.Ridership is lowest in the early morning (likely overnight).The afternoon peak suggests the ride service is used for transport for after-school and after-work.
+
+```{r}
+bike_data_weekdays <- bike_data_cleaned %>%
+  filter(ride_weekday %in% c("Friday", "Saturday", "Sunday"))
+
+
+ggplot(bike_data_weekdays, aes(x = ride_hour, group = member_casual, color = member_casual)) +
+  geom_line(stat = "count", size = 1) +  
+  geom_point(stat = "count", size = 3) +  
+  scale_color_manual(values = c("casual" = "black", "member" = "orange")) +
+  labs(title = "Ride Count by Time of Day (Weekdays)",
+       x = "Hour of the Day",
+       y = "Ride Count",
+       color = "Rider Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_continuous(breaks = 0:23) 
+
+```
+##  Member ridership peaks significantly in the late afternoon at 271097 (around 5-6 PM) and again to a lesser extent in the morning, suggesting commute patterns. Casual ridership also peaks in the afternoon but doesn't show the same distinct morning rush, and rides volume is far less than the other chart, by half.Member ridership has two peaks: a morning peak and a much larger afternoon peak. This strongly suggests the ride service is used by members for commuting to and from work. Casual ridership only has a significant afternoon/evening peak, implying use for leisure activities, errands, and transport for after-school and after-work. The difference in patterns between members and casual riders suggests different user needs and purposes.
+
+
+
+## Ride duration for each user type. 
+```{r}
+mean_ride_duration <- bike_data_cleaned %>%
+  group_by(ride_weekday, member_casual) %>%
+  summarise(mean_ride_duration = mean(ride_duration, na.rm = TRUE), .groups = "drop")  
+
+ggplot(mean_ride_duration, aes(x = ride_weekday, y = mean_ride_duration, fill = member_casual)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c("casual" = "grey", "member" = "orange")) +  
+  geom_text(aes(label = round(mean_ride_duration, 1)), position = position_stack(vjust = 0.5), color = "white", size = 4) +  
+  labs(title = "Mean Ride Duration by Rider Type and Day of the Week",
+       x = "Day of the Week",
+       y = "Mean Ride Duration (Minutes)",
+       fill = "Rider Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+## Casual riders consistently have longer average ride durations than members on every day of the week. Ride duration is longest for both groups on weekends (Saturday and Sunday). Casual riders exhibit the most significant increase in ride duration on weekends, suggesting they might be using the service more for leisure activities during these times. Member ride durations remain relatively consistent throughout the week, indicating more utilitarian use, such as commuting, with less variation on weekends. 
+
+
+## Mean duration time for casual users over every hour of the day.
+
+```{r}
+casual_data <- bike_data_cleaned %>%
+  filter(member_casual == "casual")
+
+mean_ride_time <- casual_data %>%
+  group_by(ride_hour) %>%
+  summarise(mean_ride_duration = mean(ride_duration, na.rm = TRUE))
+
+
+ggplot(mean_ride_time, aes(x = ride_hour, y = mean_ride_duration)) +
+  geom_line(color = "black", size = 1) +  
+  geom_point(color = "black", size = 3) +  
+  geom_text(aes(label = round(mean_ride_duration, 1)), vjust = -0.5, color = "black", size = 3) +   
+  labs(title = "Mean Ride Time by Hour for Casual Riders",
+       x = "Hour of the Day",
+       y = "Mean Ride Duration (Minutes)") +
+  theme_minimal() +
+  scale_x_continuous(breaks = 0:23)
+```
+## Ride durations are shortest in the early morning hours (4 AM to 8 AM) and increase sharply starting around 9 AM. The mean ride time peaks in the late morning/early afternoon (10 AM-2 PM), before gradually declining through the evening.
+
+##Casual riders tend to take much longer rides during the late morning and early afternoon hours. The pattern suggests the service is primarily used for tourism or leisure-related activities during the middle of the day. The lower ride durations in the early morning indicate the service is likely not used for early commuting purposes by casual riders.
+
+
+
+## Top 10 stations where Casual riders most often to start ride
+
+```{r}
+
+casual_data <- bike_data_cleaned %>%
+  filter(member_casual == "casual") %>%
+  filter(!is.na(start_station_name))  
+
+station_counts <- casual_data %>%
+  group_by(start_station_name) %>%
+  summarise(ride_count = n()) %>%
+  arrange(desc(ride_count)) %>%
+  head(10) 
+
+
+ggplot(station_counts, aes(x = reorder(start_station_name, ride_count), y = ride_count)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  coord_flip() +  
+  labs(title = "Top 10 Stations with Most Casual Riders",
+       x = "Station Name",
+       y = "Number of Rides",
+       fill = "Rider Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+```
+
+## Streeter Dr & Grand Ave is a prime location for casual riders, suggesting a nearby attraction or point of interest. The high ridership at DuSable Lake Shore locations, Millennium Park, Shedd Aquarium, and Theater on the Lake indicates that casual riders are drawn to recreational and tourist destinations along the lakefront. Understanding these popular stations can help optimize bike/scooter placement and inform targeted promotions to attract even more casual riders. The plot also highlights the geographic distribution of casual rider demand, allowing for strategic resource allocation.
+
+
+
+
+

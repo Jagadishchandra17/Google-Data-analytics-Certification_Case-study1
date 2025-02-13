@@ -1,0 +1,239 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+# Data Cleaning 
+
+
+
+## calling all the Libraires
+```{r}
+library(tidyverse)
+library(lubridate)
+library(geosphere)
+library(ggmap)
+```
+
+
+## binding all the files as one data source for the analysis.
+```{r}
+setwd("/Users/jagadishramakurthi/Downloads/GDACP/Datasets")
+
+# Combine the data.
+bike_data_merged <- rbind(
+  read_csv("202401-divvy-tripdata.csv"), 
+  read_csv("202402-divvy-tripdata.csv"),
+  read_csv("202403-divvy-tripdata.csv"),
+  read_csv("202404-divvy-tripdata.csv"),
+  read_csv("202405-divvy-tripdata.csv"),
+  read_csv("202406-divvy-tripdata.csv"),
+  read_csv("202407-divvy-tripdata.csv"),
+  read_csv("202408-divvy-tripdata.csv"),
+  read_csv("202409-divvy-tripdata.csv"),
+  read_csv("202410-divvy-tripdata.csv"),
+  read_csv("202411-divvy-tripdata.csv"),
+  read_csv("202412-divvy-tripdata.csv")
+)
+
+```
+
+
+## Summarizing the Data
+```{r}
+head(bike_data_merged)
+```
+
+```{r}
+glimpse(bike_data_merged)
+```
+
+
+```{r}
+summary(bike_data_merged)
+```
+##I have noted down the following key points from our initial exploration of the dataset: The data contains 5,860,568 observations and 12 variables. Each ride is identified by a unique "ride_id", and the "started_at" and "ended_at" variables capture the date and time for each ride, spanning from January 1, 2024, to December 31, 2024. The "rideable_type" variable categorizes the bike type as either "electric" or "classic". Information about the stations where the rides began and ended is provided in the "start_station_name", "start_station_id", "end_station_name", and "end_station_id" variables. Geospatial data, including "start_lat", "start_lng", "end_lat", and "end_lng", represent the coordinates of the start and end locations for each ride. Finally, the "member_casual" variable indicates whether the rider is a member or a casual rider.
+
+
+##Despite its richness, the dataset has some limitations. It lacks unique customer identifiers, such as customer IDs or payment details, making it challenging to track individual usage patterns over time. Additionally, the data does not distinguish between single-ride and full-day pass users, which limits our ability to analyze different casual rider behaviors.
+
+
+## Data Cleaning  and Data Transformation
+ 
+ 
+## Checking for duplicates and removing them to ensure each ride is unique.
+```{r}
+duplicate_rides <- bike_data_merged %>%
+  group_by(ride_id) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+
+num_duplicates <- nrow(duplicate_rides)
+cat("Number of duplicate ride_id values found:", num_duplicates, "\n")
+
+
+bike_data_merged_nodup<- bike_data_merged %>% 
+  distinct(ride_id, .keep_all = TRUE)
+
+cat("Number of duplicate rows removed:", num_duplicates, "\n")
+cat("Updated dataset now has", nrow(bike_data_merged_nodup), "rows.\n")
+
+```
+
+
+## Removing the missing values. 
+```{r}
+
+missing_values <- sum(is.na(bike_data_merged_nodup$ride_id))
+cat("Number of missing values in ride_id column:", missing_values, "\n")
+
+
+bike_data_merged_nmv <- bike_data_merged_nodup %>% 
+  filter(!is.na(ride_id))
+
+
+cat("Rows with missing ride_id values removed. Updated dataset now has", nrow(bike_data_merged_nmv), "rows.\n")
+```
+
+## Converting the Rideable_type from character to factor for easier analysis.
+```{r}
+
+bike_data_merged_nmv$rideable_type <- as.factor(bike_data_merged_nmv$rideable_type)
+
+class(bike_data_merged_nmv$rideable_type)
+nlevels(bike_data_merged_nmv$rideable_type)
+summary(bike_data_merged_nmv$rideable_type)
+
+```
+## In the combined dataset, there are three distinct types of rideable vehicles: Classic bikes, Electric bikes, and Electric Scooters. The Electric Scooter category represents approximately 2.6% of the total data. For the sake of streamlining the analysis process and simplifying categorization, we will consider Electric Scooters as part of the Electric bike category moving forward. This approach ensures consistency and enhances the clarity of the analysis.
+
+```{r}
+
+data_bike_rideable_type <- bike_data_merged_nmv %>%
+  mutate(rideable_type = ifelse(rideable_type == "electric_scooter", "electric_bike", rideable_type))
+
+unique(data_bike_rideable_type$rideable_type)
+
+```
+
+## Creating a new coumn ride duration from the ride started and ride end time to gain various insights in the further analysis.
+```{r}
+data_bike_rideable_type$started_at <- as.POSIXct(data_bike_rideable_type$started_at, format="%Y-%m-%d %H:%M:%S")
+data_bike_rideable_type$ended_at <- as.POSIXct(data_bike_rideable_type$ended_at, format="%Y-%m-%d %H:%M:%S")
+
+data_bike_rideable_type_1 <- data_bike_rideable_type %>%
+  mutate(ride_duration = as.numeric(difftime(ended_at, started_at, units = "mins")))
+
+head(data_bike_rideable_type_1)
+summary(data_bike_rideable_type_1)
+```
+
+
+##After reviewing the summary statistics of the newly created ride_duration column, it has become clear that certain extreme values must be addressed to ensure the accuracy of future analysis. These outliers include negative ride times, which are illogical, as well as abnormally long rides that could skew results. Additionally, rides shorter than 60 seconds should be excluded, as they are often classified by Divvy as potential false starts or redocking attempts (source: https://divvybikes.com/system-data). To gain a better understanding of the ride time distribution, it is advisable to divide the ride_duration into quantiles and filter out values that fall outside a reasonable range.
+
+```{r}
+
+quantile_ride_duration <- quantile(data_bike_rideable_type_1$ride_duration, seq(0, 1, by = 0.01))
+print(quantile_ride_duration)
+```
+
+
+## Filtering the outliers from the data
+```{r}
+data_bike_rideable_type12_cleaned <- data_bike_rideable_type_1 %>%
+  filter(ride_duration >= 1 & ride_duration <= 180)  
+summary(data_bike_rideable_type12_cleaned$ride_duration)
+
+```
+
+
+# Adding new column for ride based on month, weekday, and hour
+
+```{r}
+
+
+data_bike_rideable_type123_cleaned <- data_bike_rideable_type12_cleaned %>%
+  mutate(
+    
+    ride_month = strftime(started_at, format = "%m"),   
+    ride_weekday = strftime(started_at, format = "%A"),  
+    ride_hour = floor_date(started_at, unit = "hour") %>% hour()  
+  )
+
+head(data_bike_rideable_type123_cleaned)
+```
+
+# Changing the new columns to factors for easier analysis
+```{r}
+data_bike_rideable_type1234_cleaned <- data_bike_rideable_type123_cleaned %>%
+  mutate(
+    ride_month = as.factor(ride_month),
+    ride_weekday = as.factor(ride_weekday),
+    ride_hour = as.factor(ride_hour)
+  )
+
+summary(data_bike_rideable_type1234_cleaned[, c("ride_month", "ride_weekday", "ride_hour")])
+
+```
+
+## Checking for number of levels in the new columns
+```{r}
+cat("Number of levels in ride_month:", nlevels(data_bike_rideable_type1234_cleaned$ride_month), "\n")
+cat("Number of levels in ride_weekday:", nlevels(data_bike_rideable_type1234_cleaned$ride_weekday), "\n")
+cat("Number of levels in ride_hour:", nlevels(data_bike_rideable_type1234_cleaned$ride_hour), "\n")
+```
+
+## converting other columns to factors.
+```{r}
+
+data_bike_rideable_type1234_cleaned$start_station_name <- as.factor(data_bike_rideable_type1234_cleaned$start_station_name)                          
+data_bike_rideable_type1234_cleaned$end_station_name <- as.factor(data_bike_rideable_type1234_cleaned$end_station_name)                          
+data_bike_rideable_type1234_cleaned$start_station_id <- as.factor(data_bike_rideable_type1234_cleaned$start_station_id)                          
+data_bike_rideable_type1234_cleaned$end_station_id <- as.factor(data_bike_rideable_type1234_cleaned$end_station_id)
+
+cat("start_station_name - Class:", class(data_bike_rideable_type1234_cleaned$start_station_name), 
+    "| Levels:", nlevels(data_bike_rideable_type1234_cleaned$start_station_name), "\n")
+
+cat("end_station_name - Class:", class(data_bike_rideable_type1234_cleaned$end_station_name), 
+    "| Levels:", nlevels(data_bike_rideable_type1234_cleaned$end_station_name), "\n")
+
+cat("start_station_id - Class:", class(data_bike_rideable_type1234_cleaned$start_station_id), 
+    "| Levels:", nlevels(data_bike_rideable_type1234_cleaned$start_station_id), "\n")
+
+cat("end_station_id - Class:", class(data_bike_rideable_type1234_cleaned$end_station_id), 
+    "| Levels:", nlevels(data_bike_rideable_type1234_cleaned$end_station_id), "\n")
+
+
+data_bike_cleaning <- data_bike_rideable_type1234_cleaned
+
+```
+
+## The distGeo function from the geosphere package calculates the geographical distance in kilometers between the start and end coordinates of each ride. This helps in analyzing travel patterns, identifying short and long-distance rides, and detecting any anomalies in the data.
+```{r}
+data_bike_cleaning$distance_between_stations_km <- 
+  distGeo(matrix(c(data_bike_cleaning$start_lng, data_bike_cleaning$start_lat), ncol = 2),
+          matrix(c(data_bike_cleaning$end_lng, data_bike_cleaning$end_lat), ncol = 2)) / 1000
+
+summary(data_bike_cleaning$distance_between_stations_km)
+```
+
+
+## Converting the member_casual column into factor 
+```{r}
+data_bike_cleaning$member_casual <- as.factor(data_bike_cleaning$member_casual)
+
+class(data_bike_cleaning$member_casual)
+nlevels(data_bike_cleaning$member_casual)
+summary(data_bike_cleaning$member_casual)
+```
+
+## Finally saving the Data cleaning process into complete new file for theh analysis.
+```{r}
+file_path <- "/Users/jagadishramakurthi/Downloads/GDACP/bike_data_cleaned.csv"
+write.csv(data_bike_cleaning, file_path, row.names = FALSE)
+
+cat("The cleaned dataset has been saved at:", file_path)
+
+```
+
